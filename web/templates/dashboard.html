@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>监控面板 - 智汇出海情报雷达</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        body {
+            background-color: #f5f7fa;
+        }
+        .navbar {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        }
+        .card {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+        .stats-card {
+            border-left: 4px solid #667eea;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+        }
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%);
+        }
+        .btn-success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            border: none;
+        }
+        .status-badge {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+        }
+        .status-success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .status-error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .status-pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        .loading {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-radar"></i> 智汇出海情报雷达
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/">
+                    <i class="bi bi-building"></i> 公司列表
+                </a>
+                <a class="nav-link active" href="/dashboard">
+                    <i class="bi bi-speedometer2"></i> 监控面板
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- 统计信息 -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h6 class="text-muted">公司总数</h6>
+                        <h2 class="mb-0">{{ stats.total_companies }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card" style="border-left-color: #38ef7d;">
+                    <div class="card-body">
+                        <h6 class="text-muted">高评分公司 (≥60)</h6>
+                        <h2 class="mb-0">{{ stats.high_score_companies }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card" style="border-left-color: #f5576c;">
+                    <div class="card-body">
+                        <h6 class="text-muted">事件总数</h6>
+                        <h2 class="mb-0">{{ stats.total_events }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card" style="border-left-color: #f093fb;">
+                    <div class="card-body">
+                        <h6 class="text-muted">今日推送</h6>
+                        <h2 class="mb-0">{{ today_notifications }}</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 操作面板 -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0"><i class="bi bi-play-circle"></i> 手动操作</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <button class="btn btn-primary w-100" onclick="runPipeline()">
+                                    <i class="bi bi-cloud-download"></i> 立即采集
+                                </button>
+                                <small class="text-muted">触发全量数据采集</small>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-success w-100" onclick="runScoring()">
+                                    <i class="bi bi-star"></i> 重新评分
+                                </button>
+                                <small class="text-muted">重新计算所有公司评分</small>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-info w-100" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; border: none;" onclick="runNotification()">
+                                    <i class="bi bi-bell"></i> 立即推送
+                                </button>
+                                <small class="text-muted">推送高评分公司到微信</small>
+                            </div>
+                        </div>
+                        <div id="actionResult" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- 采集器状态 -->
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0"><i class="bi bi-gear"></i> 采集器状态</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if collector_status %}
+                        <table class="table table-borderless">
+                            <thead>
+                                <tr>
+                                    <th>采集器</th>
+                                    <th>状态</th>
+                                    <th>采集数量</th>
+                                    <th>上次运行</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for status in collector_status %}
+                                <tr>
+                                    <td>{{ status.collector_name }}</td>
+                                    <td>
+                                        {% if status.status == 'success' %}
+                                        <span class="status-badge status-success">
+                                            <i class="bi bi-check-circle"></i> 成功
+                                        </span>
+                                        {% elif status.status == 'error' %}
+                                        <span class="status-badge status-error">
+                                            <i class="bi bi-x-circle"></i> 失败
+                                        </span>
+                                        {% else %}
+                                        <span class="status-badge status-pending">
+                                            <i class="bi bi-clock"></i> 待运行
+                                        </span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ status.items_collected or 0 }}</td>
+                                    <td>
+                                        {% if status.last_run_time %}
+                                        {{ status.last_run_time[:16] }}
+                                        {% else %}
+                                        -
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        {% else %}
+                        <p class="text-muted text-center py-4">暂无采集器状态记录</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- 最近事件 -->
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0"><i class="bi bi-clock-history"></i> 最近事件</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if recent_events %}
+                        <div class="list-group list-group-flush">
+                            {% for event in recent_events %}
+                            <div class="list-group-item px-0">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h6 class="mb-1">{{ event.title[:50] }}{% if event.title|length > 50 %}...{% endif %}</h6>
+                                        <small class="text-muted">
+                                            {{ event.company_name or 'Unknown' }} |
+                                            {{ event.source }}
+                                        </small>
+                                    </div>
+                                    <small class="text-muted">
+                                        {{ event.created_at[:10] if event.created_at else '' }}
+                                    </small>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <p class="text-muted text-center py-4">暂无事件记录</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function showResult(message, isSuccess = true) {
+            const resultDiv = document.getElementById('actionResult');
+            const alertClass = isSuccess ? 'alert-success' : 'alert-danger';
+            resultDiv.innerHTML = `<div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>`;
+            setTimeout(() => {
+                resultDiv.innerHTML = '';
+            }, 5000);
+        }
+
+        function runPipeline() {
+            const btn = event.target;
+            btn.classList.add('loading');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 采集中...';
+
+            fetch('/api/run', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        showResult('<i class="bi bi-check-circle"></i> ' + data.message);
+                    } else {
+                        showResult('<i class="bi bi-x-circle"></i> ' + data.message, false);
+                    }
+                })
+                .catch(err => {
+                    showResult('<i class="bi bi-x-circle"></i> 请求失败: ' + err, false);
+                })
+                .finally(() => {
+                    btn.classList.remove('loading');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-cloud-download"></i> 立即采集';
+                });
+        }
+
+        function runScoring() {
+            const btn = event.target;
+            btn.classList.add('loading');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 评分中...';
+
+            fetch('/api/score', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        showResult(`<i class="bi bi-check-circle"></i> 评分完成，共 ${data.count} 家公司`);
+                    } else {
+                        showResult('<i class="bi bi-x-circle"></i> ' + data.message, false);
+                    }
+                })
+                .catch(err => {
+                    showResult('<i class="bi bi-x-circle"></i> 请求失败: ' + err, false);
+                })
+                .finally(() => {
+                    btn.classList.remove('loading');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-star"></i> 重新评分';
+                });
+        }
+
+        function runNotification() {
+            const btn = event.target;
+            btn.classList.add('loading');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 推送中...';
+
+            fetch('/api/notify', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        showResult(`<i class="bi bi-check-circle"></i> ${data.data.message}`);
+                    } else {
+                        showResult('<i class="bi bi-x-circle"></i> ' + data.message, false);
+                    }
+                })
+                .catch(err => {
+                    showResult('<i class="bi bi-x-circle"></i> 请求失败: ' + err, false);
+                })
+                .finally(() => {
+                    btn.classList.remove('loading');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-bell"></i> 立即推送';
+                });
+        }
+    </script>
+</body>
+</html>

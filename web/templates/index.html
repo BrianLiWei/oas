@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智汇出海情报雷达 - OAS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        body {
+            background-color: #f5f7fa;
+        }
+        .navbar {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        }
+        .card {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+        .score-badge {
+            font-size: 1.2rem;
+            font-weight: bold;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+        }
+        .score-high {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+        }
+        .score-medium {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+        .score-low {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            color: #333;
+        }
+        .table-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .company-row:hover {
+            background-color: #f8f9fa;
+            transform: translateX(5px);
+            transition: all 0.3s;
+        }
+        .stats-card {
+            border-left: 4px solid #667eea;
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-radar"></i> 智汇出海情报雷达
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/dashboard">
+                    <i class="bi bi-speedometer2"></i> 监控面板
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- 统计信息 -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h6 class="text-muted">公司总数</h6>
+                        <h2 class="mb-0">{{ stats.total_companies }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card" style="border-left-color: #38ef7d;">
+                    <div class="card-body">
+                        <h6 class="text-muted">高评分公司 (≥60)</h6>
+                        <h2 class="mb-0">{{ stats.high_score_companies }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card" style="border-left-color: #f5576c;">
+                    <div class="card-body">
+                        <h6 class="text-muted">事件总数</h6>
+                        <h2 class="mb-0">{{ stats.total_events }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card" style="border-left-color: #f093fb;">
+                    <div class="card-body">
+                        <h6 class="text-muted">今日新增事件</h6>
+                        <h2 class="mb-0">{{ stats.today_events }}</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 筛选栏 -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <form method="get" class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">最低评分</label>
+                        <select name="min_score" class="form-select">
+                            <option value="0" {% if min_score == 0 %}selected{% endif %}>全部</option>
+                            <option value="40" {% if min_score == 40 %}selected{% endif %}>40分以上</option>
+                            <option value="60" {% if min_score == 60 %}selected{% endif %}>60分以上</option>
+                            <option value="80" {% if min_score == 80 %}selected{% endif %}>80分以上</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">融资轮次</label>
+                        <select name="funding_stage" class="form-select">
+                            <option value="">全部</option>
+                            <option value="seed" {% if funding_stage == 'seed' %}selected{% endif %}>Seed</option>
+                            <option value="series a" {% if funding_stage == 'series a' %}selected{% endif %}>Series A</option>
+                            <option value="series b" {% if funding_stage == 'series b' %}selected{% endif %}>Series B</option>
+                            <option value="series c" {% if funding_stage == 'series c' %}selected{% endif %}>Series C+</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">排序方式</label>
+                        <select name="sort" class="form-select">
+                            <option value="score" {% if sort == 'score' %}selected{% endif %}>按评分</option>
+                            <option value="name" {% if sort == 'name' %}selected{% endif %}>按名称</option>
+                            <option value="updated" {% if sort == 'updated' %}selected{% endif %}>按更新时间</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-search"></i> 筛选
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 公司列表 -->
+        <div class="card">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-header">
+                            <tr>
+                                <th class="px-4 py-3">公司名称</th>
+                                <th class="py-3">行业</th>
+                                <th class="py-3">目标市场</th>
+                                <th class="py-3">融资轮次</th>
+                                <th class="py-3">评分</th>
+                                <th class="py-3">最近事件</th>
+                                <th class="py-3">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for company in companies %}
+                            <tr class="company-row">
+                                <td class="px-4 py-3">
+                                    <strong>{{ company.name }}</strong>
+                                </td>
+                                <td class="py-3">
+                                    <span class="badge bg-secondary">{{ company.industry or 'Unknown' }}</span>
+                                </td>
+                                <td class="py-3">{{ company.target_market or '-' }}</td>
+                                <td class="py-3">{{ company.funding_stage or '-' }}</td>
+                                <td class="py-3">
+                                    {% if company.score >= 60 %}
+                                    <span class="badge score-badge score-high">{{ company.score }}</span>
+                                    {% elif company.score >= 40 %}
+                                    <span class="badge score-badge score-medium">{{ company.score }}</span>
+                                    {% else %}
+                                    <span class="badge score-badge score-low">{{ company.score }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="py-3 text-muted" style="font-size: 0.85rem;">
+                                    {{ company.last_event_time[:10] if company.last_event_time else '-' }}
+                                </td>
+                                <td class="py-3">
+                                    <a href="/company/{{ company.id }}" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-eye"></i> 查看
+                                    </a>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="7" class="text-center py-5 text-muted">
+                                    <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+                                    <p class="mt-2">暂无数据</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

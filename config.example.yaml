@@ -1,0 +1,61 @@
+# OAS (Overseas AI Scout) 配置文件
+# 复制此文件为 config.yaml 并填入你的配置
+
+# 数据库配置
+database:
+  path: "data/oas.db"
+
+# Flask配置
+flask:
+  host: "0.0.0.0"
+  port: 5000
+  debug: false
+
+# 日志配置
+logging:
+  level: "INFO"
+  file: "logs/oas.log"
+
+# 数据源开关
+collectors:
+  kickstarter:
+    enabled: true
+
+  producthunt:
+    enabled: true
+
+  itjuzi:
+    enabled: true
+    api_key: ""
+
+  rss_feeds:
+    enabled: true
+    feeds:
+      - name: "36kr 出海"
+        url: "https://www.36kr.com/information/express/"
+
+  github:
+    enabled: true
+    keywords: ["payment", "fintech"]
+
+# 评分配置
+scoring:
+  thresholds:
+    high_priority: 60
+    medium_priority: 40
+
+# 企业微信配置
+wechat:
+  webhook_url: ""  # 填入你的企业微信机器人Webhook URL
+  mention_mobile_list: []
+
+# 调度配置
+scheduler:
+  full_run:
+    enabled: true
+    hour: 8
+    minute: 0
+
+  incremental_run:
+    enabled: true
+    hours: 2
