@@ -16,12 +16,6 @@ from datetime import datetime
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from models import get_database
-from cleaner import DataCleaner
-from scorer import CompanyScorer
-from notifier import WeChatNotifier
-from utils import load_config, setup_logging
-
 logger = logging.getLogger('OAS-Web')
 
 
@@ -35,6 +29,7 @@ def create_app(config_path: str = None, db_path: str = None):
         config_path = os.path.join(project_root, 'config.yaml')
 
     try:
+        from utils import load_config
         config = load_config(config_path)
     except Exception as e:
         logger.warning(f"无法加载配置文件，使用默认配置: {e}")
@@ -44,11 +39,12 @@ def create_app(config_path: str = None, db_path: str = None):
     if db_path is None:
         db_path = os.path.join(project_root, config.get('database', {}).get('path', 'data/oas.db'))
 
+    from models import get_database
     db = get_database(db_path)
 
-    # 评分器
-    scorer = CompanyScorer(db, config)
-    notifier = WeChatNotifier(db, config)
+    # 延迟导入（避免循环依赖）
+    scorer = None
+    notifier = None
 
     # ==================== 路由 ====================
 
@@ -214,6 +210,8 @@ def create_app(config_path: str = None, db_path: str = None):
     def api_notify():
         """手动触发推送"""
         try:
+            from notifier import WeChatNotifier
+            notifier = WeChatNotifier(db, config)
             result = notifier.notify_high_score_companies()
             return jsonify({
                 'success': True,
@@ -230,6 +228,8 @@ def create_app(config_path: str = None, db_path: str = None):
     def api_score():
         """手动触发评分"""
         try:
+            from scorer import CompanyScorer
+            scorer = CompanyScorer(db, config)
             result = scorer.score_all_companies()
             return jsonify({
                 'success': True,
