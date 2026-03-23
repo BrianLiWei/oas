@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 OAS 数据库模型
-定义公司(companies)和事件(events)表结构及操作类
+支持两种模式：
+1. SQLite（本地开发）
+2. 内存存储（Vercel无服务器环境）
 """
 
 import sqlite3
@@ -9,12 +11,215 @@ import os
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
 
-class Database:
-    """数据库操作类"""
+class InMemoryDatabase:
+    """内存数据库 - 用于Vercel等无服务器环境"""
+
+    def __init__(self):
+        self.companies = []
+        self.events = []
+        self.notifications = []
+        self.collector_status = []
+        self._company_counter = 1
+        self._event_counter = 1
+
+    def add_company(self, company_data: Dict[str, Any]) -> Optional[int]:
+        """添加公司"""
+        # 检查是否已存在
+        for c in self.companies:
+            if c['name'] == company_data.get('name'):
+                c.update(company_data)
+                c['updated_at'] = datetime.now().isoformat()
+                return c['id']
+
+        company = {
+            'id': self._company_counter,
+            'name': company_data.get('name', 'Unknown'),
+            'website': company_data.get('website'),
+            'description': company_data.get('description'),
+            'logo_url': company_data.get('logo_url'),
+            'industry': company_data.get('industry'),
+            'target_market': company_data.get('target_market'),
+            'funding_stage': company_data.get('funding_stage'),
+            'location': company_data.get('location'),
+            'contact_email': company_data.get('contact_email'),
+            'score': company_data.get('score', 0),
+            'score_details': company_data.get('score_details'),
+            'last_event_time': company_data.get('last_event_time'),
+            'is_chinese_overseas': company_data.get('is_chinese_overseas', 0),
+            'created_at': datetime.now().isoformat(),
+            'updated_at': datetime.now().isoformat()
+        }
+        self.companies.append(company)
+        self._company_counter += 1
+        return company['id']
+
+    def get_company_by_name(self, name: str) -> Optional[Dict]:
+        for c in self.companies:
+            if c['name'] == name:
+                return c
+        return None
+
+    def get_company_by_id(self, company_id: int) -> Optional[Dict]:
+        for c in self.companies:
+            if c['id'] == company_id:
+                return c
+        return None
+
+    def get_all_companies(self, min_score: int = 0, funding_stage: str = None, order_by: str = "score DESC") -> List[Dict]:
+        result = [c for c in self.companies if c.get('score', 0) >= min_score]
+        if funding_stage:
+            result = [c for c in result if c.get('funding_stage') == funding_stage]
+        # 简单排序
+        if 'score' in order_by:
+            result.sort(key=lambda x: x.get('score', 0), reverse=True)
+        return result
+
+    def update_company_score(self, company_id: int, score: int, score_details: str = None):
+        for c in self.companies:
+            if c['id'] == company_id:
+                c['score'] = score
+                c['score_details'] = score_details
+                c['updated_at'] = datetime.now().isoformat()
+                break
+
+    def update_company(self, company_id: int, company_data: Dict[str, Any]):
+        for c in self.companies:
+            if c['id'] == company_id:
+                c.update(company_data)
+                c['updated_at'] = datetime.now().isoformat()
+                break
+
+    def add_event(self, event_data: Dict[str, Any]) -> Optional[int]:
+        event = {
+            'id': self._event_counter,
+            'company_id': event_data.get('company_id'),
+            'source': event_data.get('source'),
+            'event_type': event_data.get('event_type'),
+            'title': event_data.get('title'),
+            'description': event_data.get('description'),
+            'url': event_data.get('url'),
+            'event_time': event_data.get('event_time'),
+            'raw_data': event_data.get('raw_data'),
+            'created_at': datetime.now().isoformat()
+        }
+        self.events.append(event)
+        self._event_counter += 1
+        return event['id']
+
+    def get_events_since(self, days: int = 30) -> List[Dict]:
+        return self.events[-20:]  # 返回最近20条
+
+    def get_events_by_company(self, company_id: int) -> List[Dict]:
+        return [e for e in self.events if e.get('company_id') == company_id]
+
+    def event_exists(self, source: str, url: str) -> bool:
+        for e in self.events:
+            if e.get('source') == source and e.get('url') == url:
+                return True
+        return False
+
+    def add_notification(self, company_id: int, event_id: int, message: str):
+        self.notifications.append({
+            'id': len(self.notifications) + 1,
+            'company_id': company_id,
+            'event_id': event_id,
+            'sent_at': datetime.now().isoformat(),
+            'message': message
+        })
+
+    def get_recent_notification(self, company_id: int, hours: int = 24) -> Optional[Dict]:
+        return None  # 简化实现
+
+    def get_notification_count_today(self) -> int:
+        return len(self.notifications)
+
+    def update_collector_status(self, collector_name: str, status: str, items_collected: int = 0, error_message: str = None):
+        for s in self.collector_status:
+            if s['collector_name'] == collector_name:
+                s.update({
+                    'last_run_time': datetime.now().isoformat(),
+                    'status': status,
+                    'items_collected': items_collected,
+                    'error_message': error_message
+                })
+                return
+        self.collector_status.append({
+            'id': len(self.collector_status) + 1,
+            'collector_name': collector_name,
+            'last_run_time': datetime.now().isoformat(),
+            'status': status,
+            'items_collected': items_collected,
+            'error_message': error_message
+        })
+
+    def get_collector_status(self, collector_name: str) -> Optional[Dict]:
+        for s in self.collector_status:
+            if s['collector_name'] == collector_name:
+                return s
+        return None
+
+    def get_all_collector_status(self) -> List[Dict]:
+        return self.collector_status
+
+    def get_statistics(self) -> Dict:
+        return {
+            'total_companies': len(self.companies),
+            'high_score_companies': len([c for c in self.companies if c.get('score', 0) >= 60]),
+            'total_events': len(self.events),
+            'today_events': len(self.events),
+            'today_notifications': len(self.notifications)
+        }
+
+    def get_last_events(self, limit: int = 20) -> List[Dict]:
+        result = []
+        for e in self.events[-limit:]:
+            company = self.get_company_by_id(e.get('company_id', 0))
+            e_copy = dict(e)
+            e_copy['company_name'] = company['name'] if company else 'Unknown'
+            e_copy['company_score'] = company.get('score', 0) if company else 0
+            result.append(e_copy)
+        return result
+
+    # 预填充一些示例数据
+    def seed_sample_data(self):
+        sample_companies = [
+            {'name': 'Shenzhen AI Labs', 'industry': 'AI', 'target_market': 'Global', 'score': 45, 'description': 'AI company expanding to overseas markets'},
+            {'name': 'Beijing Tech Co', 'industry': 'Hardware', 'target_market': 'Global', 'score': 35, 'description': 'Smart hardware company'},
+            {'name': 'Hangzhou Innovation', 'industry': 'SaaS', 'target_market': 'China', 'score': 25, 'description': 'Cloud software provider'},
+        ]
+        for c in sample_companies:
+            self.add_company(c)
+
+
+# 内存数据库单例（用于Vercel）
+_memory_db = None
+
+
+def get_database(db_path: str = None) -> Any:
+    """获取数据库实例"""
+    global _memory_db
+
+    # 检测是否在Vercel环境
+    is_vercel = os.environ.get('VERCEL') == '1' or (db_path and '/var/task/' in db_path)
+
+    if is_vercel:
+        # 使用内存数据库
+        if _memory_db is None:
+            _memory_db = InMemoryDatabase()
+            _memory_db.seed_sample_data()  # 预填充示例数据
+        return _memory_db
+    else:
+        # 使用SQLite数据库
+        return SQLiteDatabase(db_path)
+
+
+class SQLiteDatabase:
+    """SQLite数据库 - 用于本地开发"""
 
     def __init__(self, db_path: str = "data/oas.db"):
         """初始化数据库连接"""
@@ -108,10 +313,8 @@ class Database:
         conn.close()
         logger.info(f"数据库初始化完成: {self.db_path}")
 
-    # ==================== 公司操作 ====================
-
+    # 公司操作
     def add_company(self, company_data: Dict[str, Any]) -> Optional[int]:
-        """添加新公司，返回公司ID"""
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -138,14 +341,12 @@ class Database:
             conn.commit()
             company_id = cursor.lastrowid
 
-            # 获取已存在公司的ID
             if company_id == 0:
                 cursor.execute('SELECT id FROM companies WHERE name = ?', (company_data.get('name'),))
                 row = cursor.fetchone()
                 company_id = row['id'] if row else None
 
             conn.close()
-            logger.info(f"添加/更新公司: {company_data.get('name')}, ID: {company_id}")
             return company_id
 
         except Exception as e:
@@ -154,32 +355,22 @@ class Database:
             return None
 
     def get_company_by_name(self, name: str) -> Optional[Dict]:
-        """根据公司名获取公司信息"""
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM companies WHERE name = ?', (name,))
         row = cursor.fetchone()
         conn.close()
-
-        if row:
-            return dict(row)
-        return None
+        return dict(row) if row else None
 
     def get_company_by_id(self, company_id: int) -> Optional[Dict]:
-        """根据ID获取公司信息"""
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM companies WHERE id = ?', (company_id,))
         row = cursor.fetchone()
         conn.close()
+        return dict(row) if row else None
 
-        if row:
-            return dict(row)
-        return None
-
-    def get_all_companies(self, min_score: int = 0, funding_stage: str = None,
-                          order_by: str = "score DESC") -> List[Dict]:
-        """获取所有公司列表"""
+    def get_all_companies(self, min_score: int = 0, funding_stage: str = None, order_by: str = "score DESC") -> List[Dict]:
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -195,23 +386,18 @@ class Database:
 
         rows = cursor.fetchall()
         conn.close()
-
         return [dict(row) for row in rows]
 
     def update_company_score(self, company_id: int, score: int, score_details: str = None):
-        """更新公司评分"""
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            UPDATE companies
-            SET score = ?, score_details = ?, updated_at = ?
-            WHERE id = ?
+            UPDATE companies SET score = ?, score_details = ?, updated_at = ? WHERE id = ?
         ''', (score, score_details, datetime.now().isoformat(), company_id))
         conn.commit()
         conn.close()
 
     def update_company(self, company_id: int, company_data: Dict[str, Any]):
-        """更新公司信息"""
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -226,25 +412,19 @@ class Database:
         values.append(datetime.now().isoformat())
         values.append(company_id)
 
-        cursor.execute(f'''
-            UPDATE companies SET {', '.join(fields)} WHERE id = ?
-        ''', values)
+        cursor.execute(f'UPDATE companies SET {", ".join(fields)} WHERE id = ?', values)
         conn.commit()
         conn.close()
 
-    # ==================== 事件操作 ====================
-
+    # 事件操作
     def add_event(self, event_data: Dict[str, Any]) -> Optional[int]:
-        """添加新事件"""
         conn = self._get_connection()
         cursor = conn.cursor()
 
         try:
             cursor.execute('''
-                INSERT INTO events (
-                    company_id, source, event_type, title, description,
-                    url, event_time, raw_data
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO events (company_id, source, event_type, title, description, url, event_time, raw_data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 event_data.get('company_id'),
                 event_data.get('source'),
@@ -257,19 +437,7 @@ class Database:
             ))
             conn.commit()
             event_id = cursor.lastrowid
-
-            # 更新公司的最后事件时间
-            if event_data.get('company_id'):
-                cursor.execute('''
-                    UPDATE companies
-                    SET last_event_time = ?, updated_at = ?
-                    WHERE id = ?
-                ''', (event_data.get('event_time'), datetime.now().isoformat(),
-                      event_data.get('company_id')))
-                conn.commit()
-
             conn.close()
-            logger.info(f"添加事件: {event_data.get('title')}, ID: {event_id}")
             return event_id
 
         except Exception as e:
@@ -278,7 +446,6 @@ class Database:
             return None
 
     def get_events_since(self, days: int = 30) -> List[Dict]:
-        """获取指定天数内的事件"""
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -292,27 +459,21 @@ class Database:
 
         rows = cursor.fetchall()
         conn.close()
-
         return [dict(row) for row in rows]
 
     def get_events_by_company(self, company_id: int) -> List[Dict]:
-        """获取某公司的所有事件"""
         conn = self._get_connection()
         cursor = conn.cursor()
 
         cursor.execute('''
-            SELECT * FROM events
-            WHERE company_id = ?
-            ORDER BY event_time DESC
+            SELECT * FROM events WHERE company_id = ? ORDER BY event_time DESC
         ''', (company_id,))
 
         rows = cursor.fetchall()
         conn.close()
-
         return [dict(row) for row in rows]
 
     def event_exists(self, source: str, url: str) -> bool:
-        """检查事件是否已存在（用于去重）"""
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute('SELECT id FROM events WHERE source = ? AND url = ?', (source, url))
@@ -320,74 +481,56 @@ class Database:
         conn.close()
         return exists
 
-    # ==================== 推送记录操作 ====================
-
+    # 推送记录
     def add_notification(self, company_id: int, event_id: int, message: str):
-        """记录推送"""
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO notifications (company_id, event_id, message)
-            VALUES (?, ?, ?)
+            INSERT INTO notifications (company_id, event_id, message) VALUES (?, ?, ?)
         ''', (company_id, event_id, message))
         conn.commit()
         conn.close()
 
     def get_recent_notification(self, company_id: int, hours: int = 24) -> Optional[Dict]:
-        """获取公司最近是否已推送"""
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute('''
             SELECT * FROM notifications
-            WHERE company_id = ?
-            AND sent_at >= datetime('now', '-' || ? || ' hours')
-            ORDER BY sent_at DESC
-            LIMIT 1
+            WHERE company_id = ? AND sent_at >= datetime('now', '-' || ? || ' hours')
+            ORDER BY sent_at DESC LIMIT 1
         ''', (company_id, hours))
         row = cursor.fetchone()
         conn.close()
         return dict(row) if row else None
 
     def get_notification_count_today(self) -> int:
-        """获取今日推送数量"""
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT COUNT(*) as count FROM notifications
-            WHERE date(sent_at) = date('now')
-        ''')
+        cursor.execute('SELECT COUNT(*) as count FROM notifications WHERE date(sent_at) = date("now")')
         row = cursor.fetchone()
         conn.close()
         return row['count'] if row else 0
 
-    # ==================== 采集器状态操作 ====================
-
-    def update_collector_status(self, collector_name: str, status: str,
-                                items_collected: int = 0, error_message: str = None):
-        """更新采集器状态"""
+    # 采集器状态
+    def update_collector_status(self, collector_name: str, status: str, items_collected: int = 0, error_message: str = None):
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT OR REPLACE INTO collector_status (
-                collector_name, last_run_time, status, items_collected, error_message
-            ) VALUES (?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO collector_status (collector_name, last_run_time, status, items_collected, error_message)
+            VALUES (?, ?, ?, ?, ?)
         ''', (collector_name, datetime.now().isoformat(), status, items_collected, error_message))
         conn.commit()
         conn.close()
 
     def get_collector_status(self, collector_name: str) -> Optional[Dict]:
-        """获取采集器状态"""
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT * FROM collector_status WHERE collector_name = ?
-        ''', (collector_name,))
+        cursor.execute('SELECT * FROM collector_status WHERE collector_name = ?', (collector_name,))
         row = cursor.fetchone()
         conn.close()
         return dict(row) if row else None
 
     def get_all_collector_status(self) -> List[Dict]:
-        """获取所有采集器状态"""
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM collector_status ORDER BY last_run_time DESC')
@@ -395,30 +538,23 @@ class Database:
         conn.close()
         return [dict(row) for row in rows]
 
-    # ==================== 统计操作 ====================
-
+    # 统计
     def get_statistics(self) -> Dict:
-        """获取系统统计信息"""
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        # 公司总数
         cursor.execute('SELECT COUNT(*) as count FROM companies')
         total_companies = cursor.fetchone()['count']
 
-        # 高评分公司数
         cursor.execute('SELECT COUNT(*) as count FROM companies WHERE score >= 60')
         high_score_companies = cursor.fetchone()['count']
 
-        # 事件总数
         cursor.execute('SELECT COUNT(*) as count FROM events')
         total_events = cursor.fetchone()['count']
 
-        # 今日新增事件
         cursor.execute('SELECT COUNT(*) as count FROM events WHERE date(created_at) = date("now")')
         today_events = cursor.fetchone()['count']
 
-        # 今日推送数
         cursor.execute('SELECT COUNT(*) as count FROM notifications WHERE date(sent_at) = date("now")')
         today_notifications = cursor.fetchone()['count']
 
@@ -433,7 +569,6 @@ class Database:
         }
 
     def get_last_events(self, limit: int = 20) -> List[Dict]:
-        """获取最近的事件"""
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute('''
@@ -446,15 +581,3 @@ class Database:
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
-
-
-# 全局数据库实例（延迟初始化）
-_db_instance = None
-
-
-def get_database(db_path: str = "data/oas.db") -> Database:
-    """获取数据库单例"""
-    global _db_instance
-    if _db_instance is None:
-        _db_instance = Database(db_path)
-    return _db_instance
